@@ -1,0 +1,6 @@
+{
+  "name": "LogicPulse IDE - Industrial Automation Digital Twin Lab",
+  "description": "Browser-based PLC Ladder Logic, I/O Tag Management, and Real-time Deterministic Simulation Studio",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
