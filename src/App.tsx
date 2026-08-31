@@ -17,9 +17,8 @@ import { projectStorage } from './storage/projectStorage';
 import { sampleProjects } from './data/sampleProjects';
 import { defaultDialect, findDuplicateAddresses } from './utils/addressParser';
 
-import { TopAppBar } from './components/TopAppBar';
-import { SideNavBar } from './components/SideNavBar';
-import { ToolboxPanel } from './components/ToolboxPanel';
+import { TopAppBar, MainWorkspaceView } from './components/TopAppBar';
+import { LeftSidebarPanel } from './components/LeftSidebarPanel';
 import { LadderCanvas } from './components/LadderCanvas';
 import { IOTable } from './components/IOTable';
 import { DigitalTwin3D } from './components/DigitalTwin3D';
@@ -46,6 +45,11 @@ export function App() {
 
   // UI Navigation & Layout
   const [activeNav, setActiveNav] = useState<ActiveSideNav>('toolbox');
+  const [viewMode, setViewMode] = useState<MainWorkspaceView>('ladder');
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(280);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [rightPanelWidth, setRightPanelWidth] = useState(280);
   const [activeBottomTab, setActiveBottomTab] = useState<ActiveBottomTab>('watch');
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(true);
   const [theme, setTheme] = useState<ThemeStyle>('industrial');
@@ -618,6 +622,99 @@ export function App() {
     setSelectedElementId(null);
   };
 
+  const handleLoadTemplateLogic = (templateId: string) => {
+    const newRungId = `rung_tmpl_${Date.now()}`;
+    let templateElements: LadderElement[] = [];
+    let comment = 'Standard Function Block Logic';
+
+    if (templateId === 'dol_starter') {
+      comment = 'Motor Starter (DOL) with start PB, stop PB, and latch';
+      templateElements = [
+        {
+          id: `elem_${Date.now()}_1`,
+          type: 'NO_CONTACT',
+          address: { area: 'INPUT', byte: 0, bit: 0, dataType: 'BOOL', rawString: 'I0.0' },
+          symbol: 'START_PB',
+        },
+        {
+          id: `elem_${Date.now()}_2`,
+          type: 'NC_CONTACT',
+          address: { area: 'INPUT', byte: 0, bit: 1, dataType: 'BOOL', rawString: 'I0.1' },
+          symbol: 'STOP_PB',
+        },
+        {
+          id: `elem_${Date.now()}_3`,
+          type: 'NC_CONTACT',
+          address: { area: 'INPUT', byte: 0, bit: 4, dataType: 'BOOL', rawString: 'I0.4' },
+          symbol: 'OVERLOAD_OL',
+        },
+        {
+          id: `elem_${Date.now()}_4`,
+          type: 'COIL',
+          address: { area: 'OUTPUT', byte: 0, bit: 0, dataType: 'BOOL', rawString: 'Q0.0' },
+          symbol: 'MOTOR_OUT',
+        },
+      ];
+    } else if (templateId === 'conveyor_sort') {
+      comment = 'Conveyor Sorter diverter pusher trigger logic';
+      templateElements = [
+        {
+          id: `elem_${Date.now()}_1`,
+          type: 'NO_CONTACT',
+          address: { area: 'INPUT', byte: 0, bit: 2, dataType: 'BOOL', rawString: 'I0.2' },
+          symbol: 'PHOTO_SENSOR',
+        },
+        {
+          id: `elem_${Date.now()}_2`,
+          type: 'TON',
+          address: { area: 'TIMER', byte: 0, dataType: 'TIMER', rawString: 'T1' },
+          symbol: 'PUSHER_DLY',
+          params: { presetTimeMs: 1500, elapsedTimeMs: 0 },
+        },
+        {
+          id: `elem_${Date.now()}_3`,
+          type: 'COIL',
+          address: { area: 'OUTPUT', byte: 0, bit: 1, dataType: 'BOOL', rawString: 'Q0.1' },
+          symbol: 'PUSHER_SOL',
+        },
+      ];
+    } else {
+      comment = 'Template Logic Circuit';
+      templateElements = [
+        {
+          id: `elem_${Date.now()}_1`,
+          type: 'NO_CONTACT',
+          address: { area: 'INPUT', byte: 0, bit: 0, dataType: 'BOOL', rawString: 'I0.0' },
+          symbol: 'START_PB',
+        },
+        {
+          id: `elem_${Date.now()}_2`,
+          type: 'COIL',
+          address: { area: 'OUTPUT', byte: 0, bit: 0, dataType: 'BOOL', rawString: 'Q0.0' },
+          symbol: 'MOTOR_OUT',
+        },
+      ];
+    }
+
+    const newRung: LadderRung = {
+      id: newRungId,
+      number: project.ladder.length + 1,
+      comment,
+      elements: templateElements,
+    };
+
+    const updated: ProjectFile = {
+      ...project,
+      ladder: [...project.ladder, newRung],
+    };
+
+    setProject(updated);
+    pushHistory(updated);
+    setSelectedRungId(newRungId);
+    setSelectedElementId(null);
+    setViewMode('ladder');
+  };
+
   // Keyboard Shortcuts (Ctrl+S, Ctrl+Z, Ctrl+Y, Delete)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -702,7 +799,26 @@ export function App() {
         theme={theme}
         scanTimeMs={scanTimeMs}
         activeNav={activeNav}
-        onSelectNav={setActiveNav}
+        onSelectNav={(nav) => {
+          setActiveNav(nav);
+          if (nav === 'variables') setViewMode('variables');
+          if (nav === 'twin3d') setViewMode('twin3d');
+          if (nav === 'toolbox') setViewMode('ladder');
+          setIsLeftPanelOpen(true);
+        }}
+        viewMode={viewMode}
+        onSelectViewMode={(mode) => {
+          setViewMode(mode);
+          if (mode === 'variables') setActiveNav('variables');
+          else if (mode === 'twin3d') setActiveNav('twin3d');
+          else if (mode === 'ladder') setActiveNav('toolbox');
+        }}
+        isLeftPanelOpen={isLeftPanelOpen}
+        onToggleLeftPanel={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
+        isRightPanelOpen={isRightPanelOpen}
+        onToggleRightPanel={() => setIsRightPanelOpen(!isRightPanelOpen)}
+        isBottomPanelOpen={isBottomPanelOpen}
+        onToggleBottomPanel={() => setIsBottomPanelOpen(!isBottomPanelOpen)}
         onRunSim={handleRunSim}
         onStopSim={handleStopSim}
         onPauseSim={handlePauseSim}
@@ -723,68 +839,123 @@ export function App() {
       />
 
       {/* Main Studio Body Workspace */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Left Side Activity Navigation Bar */}
-        <SideNavBar
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
+        {/* Left Activity Nav and Persistent Tool/Project Panel */}
+        <LeftSidebarPanel
           activeNav={activeNav}
-          onSelectNav={setActiveNav}
+          project={project}
           theme={theme}
+          simStatus={simStatus}
+          scanTimeMs={scanTimeMs}
+          isOpen={isLeftPanelOpen}
+          onToggleOpen={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
+          panelWidth={leftPanelWidth}
+          onChangeWidth={setLeftPanelWidth}
+          onAddElement={handleAddElementFromToolbox}
+          onAddRung={handleAddRung}
+          onSelectNav={(nav) => {
+            setActiveNav(nav);
+            if (nav === 'variables') setViewMode('variables');
+            if (nav === 'twin3d') setViewMode('twin3d');
+            if (nav === 'toolbox') setViewMode('ladder');
+            if (!isLeftPanelOpen) setIsLeftPanelOpen(true);
+          }}
+          onSelectRung={(rungId) => setSelectedRungId(rungId)}
+          selectedRungId={selectedRungId}
+          onToggleTagValue={handleToggleTagValue}
+          onToggleForce={handleToggleForce}
+          onUpdatePLCConfig={(config) => {
+            setProject((prev) => ({
+              ...prev,
+              plc: { ...prev.plc, ...config },
+            }));
+          }}
+          onLoadTemplateLogic={handleLoadTemplateLogic}
         />
 
-        {/* Dynamic Left Panel (Toolbox / Project List / Library) */}
-        {activeNav === 'toolbox' && (
-          <ToolboxPanel
-            onAddElement={handleAddElementFromToolbox}
-            onAddRung={handleAddRung}
-            theme={theme}
-          />
-        )}
-
-        {/* Center Workspace (Ladder Diagram Canvas, 3D Digital Twin, or I/O Variables Table) */}
-        {activeNav === 'variables' ? (
-          <IOTable
-            tags={project.ioMap}
-            onAddTag={handleAddTag}
-            onUpdateTag={handleUpdateTag}
-            onDeleteTag={handleDeleteTag}
-            onDeleteTags={handleDeleteTags}
-            onToggleForce={handleToggleForce}
-            onBulkToggleForce={handleBulkToggleForce}
-            onBulkSetValues={handleBulkSetValues}
-            onToggleValue={handleToggleTagValue}
-            theme={theme}
-            simStatus={simStatus}
-          />
-        ) : activeNav === 'twin3d' ? (
-          <DigitalTwin3D
-            project={project}
-            simStatus={simStatus}
-            onToggleTagValue={handleToggleTagValue}
-            onToggleForce={handleToggleForce}
-            theme={theme}
-          />
-        ) : (
-          <LadderCanvas
-            rungs={project.ladder}
-            selectedElementId={selectedElementId}
-            selectedRungId={selectedRungId}
-            onSelectElement={(elemId, rungId) => {
-              setSelectedElementId(elemId);
-              setSelectedRungId(rungId);
-            }}
-            onSelectRung={(rungId) => setSelectedRungId(rungId)}
-            onToggleContactValue={handleToggleContactValue}
-            onDeleteElement={handleDeleteElement}
-            onMoveElement={handleMoveElement}
-            onAddRung={handleAddRung}
-            onDeleteRung={handleDeleteRung}
-            onUpdateRungComment={handleUpdateRungComment}
-            onAddElementToRung={handleAddElementToRung}
-            simStatus={simStatus}
-            theme={theme}
-            ioTags={project.ioMap}
-          />
-        )}
+        {/* Center Main Workspace (Ladder, 3D Twin, Split Screen, or Variables Table) */}
+        <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden relative bg-[#141418]">
+          {viewMode === 'variables' ? (
+            <IOTable
+              tags={project.ioMap}
+              onAddTag={handleAddTag}
+              onUpdateTag={handleUpdateTag}
+              onDeleteTag={handleDeleteTag}
+              onDeleteTags={handleDeleteTags}
+              onToggleForce={handleToggleForce}
+              onBulkToggleForce={handleBulkToggleForce}
+              onBulkSetValues={handleBulkSetValues}
+              onToggleValue={handleToggleTagValue}
+              theme={theme}
+              simStatus={simStatus}
+            />
+          ) : viewMode === 'twin3d' ? (
+            <DigitalTwin3D
+              project={project}
+              simStatus={simStatus}
+              onToggleTagValue={handleToggleTagValue}
+              onToggleForce={handleToggleForce}
+              theme={theme}
+            />
+          ) : viewMode === 'split' ? (
+            /* Split View: Ladder on left, 3D Digital Twin on right */
+            <div className="flex-1 flex w-full h-full min-w-0 min-h-0">
+              <div className="flex-1 min-w-0 border-r border-slate-800 flex flex-col">
+                <LadderCanvas
+                  rungs={project.ladder}
+                  selectedElementId={selectedElementId}
+                  selectedRungId={selectedRungId}
+                  onSelectElement={(elemId, rungId) => {
+                    setSelectedElementId(elemId);
+                    setSelectedRungId(rungId);
+                  }}
+                  onSelectRung={(rungId) => setSelectedRungId(rungId)}
+                  onToggleContactValue={handleToggleContactValue}
+                  onDeleteElement={handleDeleteElement}
+                  onMoveElement={handleMoveElement}
+                  onAddRung={handleAddRung}
+                  onDeleteRung={handleDeleteRung}
+                  onUpdateRungComment={handleUpdateRungComment}
+                  onAddElementToRung={handleAddElementToRung}
+                  simStatus={simStatus}
+                  theme={theme}
+                  ioTags={project.ioMap}
+                />
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col">
+                <DigitalTwin3D
+                  project={project}
+                  simStatus={simStatus}
+                  onToggleTagValue={handleToggleTagValue}
+                  onToggleForce={handleToggleForce}
+                  theme={theme}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Standard Full Ladder Diagram View */
+            <LadderCanvas
+              rungs={project.ladder}
+              selectedElementId={selectedElementId}
+              selectedRungId={selectedRungId}
+              onSelectElement={(elemId, rungId) => {
+                setSelectedElementId(elemId);
+                setSelectedRungId(rungId);
+              }}
+              onSelectRung={(rungId) => setSelectedRungId(rungId)}
+              onToggleContactValue={handleToggleContactValue}
+              onDeleteElement={handleDeleteElement}
+              onMoveElement={handleMoveElement}
+              onAddRung={handleAddRung}
+              onDeleteRung={handleDeleteRung}
+              onUpdateRungComment={handleUpdateRungComment}
+              onAddElementToRung={handleAddElementToRung}
+              simStatus={simStatus}
+              theme={theme}
+              ioTags={project.ioMap}
+            />
+          )}
+        </div>
 
         {/* Right Properties Inspector Panel */}
         <InspectorPanel
@@ -795,6 +966,10 @@ export function App() {
           theme={theme}
           simStatus={simStatus}
           scanTimeMs={scanTimeMs}
+          isOpen={isRightPanelOpen}
+          onToggleOpen={() => setIsRightPanelOpen(!isRightPanelOpen)}
+          panelWidth={rightPanelWidth}
+          onChangeWidth={setRightPanelWidth}
         />
       </div>
 
