@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
   Trash2, 
@@ -216,9 +217,14 @@ export const IOTable: React.FC<IOTableProps> = ({
   const hasSelectedBools = selectedTags.some((t) => t.dataType === 'BOOL');
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
-      theme === 'modern' ? 'bg-white text-slate-900' : 'bg-[#0a0a0c] text-slate-200'
-    }`}>
+    <motion.div 
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
+        theme === 'modern' ? 'bg-white text-slate-900' : 'bg-[#0a0a0c] text-slate-200'
+      }`}
+    >
       {/* Table Toolbar */}
       <div className={`p-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 ${
         theme === 'modern' ? 'bg-[#f5f5f7] border-slate-200' : 'bg-[#111114] border-slate-800'
@@ -233,7 +239,7 @@ export const IOTable: React.FC<IOTableProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search Tag / Address..."
-              className="pl-8 pr-3 py-1 bg-[#1a1a1e] border border-slate-700 rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 w-48"
+              className="pl-8 pr-3 py-1 bg-[#1a1a1e] border border-slate-700 rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 w-48 transition-colors"
             />
           </div>
 
@@ -243,10 +249,10 @@ export const IOTable: React.FC<IOTableProps> = ({
               <button
                 key={area}
                 onClick={() => setAreaFilter(area)}
-                className={`px-2.5 py-0.5 rounded transition-colors ${
+                className={`relative px-2.5 py-0.5 rounded transition-all cursor-pointer ${
                   areaFilter === area
-                    ? 'bg-blue-600 text-white font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                 }`}
               >
                 {area}
@@ -263,7 +269,7 @@ export const IOTable: React.FC<IOTableProps> = ({
             disabled={!hasSelected}
             className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all ${
               hasSelected
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/30 cursor-pointer shadow-xs'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/30 cursor-pointer shadow-xs active:scale-95'
                 : 'bg-slate-800/40 text-slate-500 border border-slate-800 cursor-not-allowed'
             }`}
             title={hasSelected ? `Bulk Force toggle for ${selectedCount} selected tags` : 'Select tags using checkboxes to Bulk Force'}
@@ -303,86 +309,96 @@ export const IOTable: React.FC<IOTableProps> = ({
       </div>
 
       {/* Floating / Sticky Bulk Action Bar when items are selected */}
-      {hasSelected && (
-        <div className="px-4 py-2 bg-[#1a1a24] border-b border-blue-500/40 flex items-center justify-between gap-3 text-xs flex-wrap shadow-lg transition-all animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/40 font-mono font-bold text-xs flex items-center gap-1">
-              <CheckSquare className="w-3.5 h-3.5" />
-              {selectedCount} Tag{selectedCount !== 1 ? 's' : ''} Selected
-            </span>
-
-            <button
-              onClick={handleClearSelection}
-              className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer ml-1"
-            >
-              Clear Selection
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Force Actions */}
-            <div className="flex items-center gap-1 bg-[#111114] p-1 rounded border border-slate-700">
-              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold px-1">
-                Force:
-              </span>
-              <button
-                onClick={() => handleBulkToggleForceAction()}
-                className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 font-semibold text-[11px] flex items-center gap-1 transition-colors"
-                title="Invert Force state of all selected tags"
-              >
-                <Lock className="w-3 h-3" /> Toggle
-              </button>
-              <button
-                onClick={() => handleBulkToggleForceAction(true)}
-                className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 font-medium text-[11px] transition-colors"
-                title="Lock / Force all selected tags"
-              >
-                Lock All
-              </button>
-              <button
-                onClick={() => handleBulkToggleForceAction(false)}
-                className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 font-medium text-[11px] transition-colors"
-                title="Unlock / Release all force overrides"
-              >
-                Release All
-              </button>
-            </div>
-
-            {/* Boolean Value Set Actions */}
-            {hasSelectedBools && (
-              <div className="flex items-center gap-1 bg-[#111114] p-1 rounded border border-slate-700">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold px-1">
-                  Set Val:
+      <AnimatePresence>
+        {hasSelected && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, y: -8, height: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="overflow-hidden bg-[#1a1a24] border-b border-blue-500/40"
+          >
+            <div className="px-4 py-2 flex items-center justify-between gap-3 text-xs flex-wrap shadow-lg">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/40 font-mono font-bold text-xs flex items-center gap-1">
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  {selectedCount} Tag{selectedCount !== 1 ? 's' : ''} Selected
                 </span>
+
                 <button
-                  onClick={() => handleBulkSetBooleanValues(true)}
-                  className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 font-bold text-[11px] flex items-center gap-1 transition-colors"
-                  title="Set all selected BOOL tags to TRUE (1)"
+                  onClick={handleClearSelection}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 underline cursor-pointer ml-1"
                 >
-                  <Zap className="w-3 h-3" /> TRUE (1)
-                </button>
-                <button
-                  onClick={() => handleBulkSetBooleanValues(false)}
-                  className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 font-semibold text-[11px] flex items-center gap-1 transition-colors"
-                  title="Set all selected BOOL tags to FALSE (0)"
-                >
-                  <PowerOff className="w-3 h-3" /> FALSE (0)
+                  Clear Selection
                 </button>
               </div>
-            )}
 
-            {/* Bulk Delete */}
-            <button
-              onClick={handleBulkDelete}
-              className="px-3 py-1 rounded bg-red-600/20 text-red-300 border border-red-500/50 hover:bg-red-600 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
-              title="Delete all selected tags from project"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Bulk Delete ({selectedCount})</span>
-            </button>
-          </div>
-        </div>
-      )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Force Actions */}
+                <div className="flex items-center gap-1 bg-[#111114] p-1 rounded border border-slate-700">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold px-1">
+                    Force:
+                  </span>
+                  <button
+                    onClick={() => handleBulkToggleForceAction()}
+                    className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Invert Force state of all selected tags"
+                  >
+                    <Lock className="w-3 h-3" /> Toggle
+                  </button>
+                  <button
+                    onClick={() => handleBulkToggleForceAction(true)}
+                    className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 font-medium text-[11px] transition-colors cursor-pointer"
+                    title="Lock / Force all selected tags"
+                  >
+                    Lock All
+                  </button>
+                  <button
+                    onClick={() => handleBulkToggleForceAction(false)}
+                    className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 font-medium text-[11px] transition-colors cursor-pointer"
+                    title="Unlock / Release all force overrides"
+                  >
+                    Release All
+                  </button>
+                </div>
+
+                {/* Boolean Value Set Actions */}
+                {hasSelectedBools && (
+                  <div className="flex items-center gap-1 bg-[#111114] p-1 rounded border border-slate-700">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold px-1">
+                      Set Val:
+                    </span>
+                    <button
+                      onClick={() => handleBulkSetBooleanValues(true)}
+                      className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Set all selected BOOL tags to TRUE (1)"
+                    >
+                      <Zap className="w-3 h-3" /> TRUE (1)
+                    </button>
+                    <button
+                      onClick={() => handleBulkSetBooleanValues(false)}
+                      className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Set all selected BOOL tags to FALSE (0)"
+                    >
+                      <PowerOff className="w-3 h-3" /> FALSE (0)
+                    </button>
+                  </div>
+                )}
+
+                {/* Bulk Delete */}
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1 rounded bg-red-600/20 text-red-300 border border-red-500/50 hover:bg-red-600 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
+                  title="Delete all selected tags from project"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Bulk Delete ({selectedCount})</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Quick Add Tag Bar */}
       <form
@@ -498,8 +514,11 @@ export const IOTable: React.FC<IOTableProps> = ({
                 const liveValue = tag.isForced && tag.forcedValue !== undefined ? tag.forcedValue : tag.currentValue;
 
                 return (
-                  <tr
+                  <motion.tr
                     key={tag.id}
+                    initial={{ opacity: 0, y: 3 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.15 }}
                     onClick={(e) => {
                       // If clicking row itself and not an interactive button/input, toggle selection
                       if (
@@ -609,19 +628,19 @@ export const IOTable: React.FC<IOTableProps> = ({
                     <td className="p-2.5 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => onDeleteTag(tag.id)}
-                        className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                         title="Delete Tag"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
-                  </tr>
+                  </motion.tr>
                 );
               })
             )}
           </tbody>
         </table>
       </div>
-    </div>
+    </motion.div>
   );
 };

@@ -340,7 +340,54 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
               </div>
             )}
           </div>
+
+          {/* Help & About Menu */}
+          <div className="relative">
+            <button
+              onClick={() => toggleMenu('help')}
+              className={`px-2 py-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1 ${
+                activeMenu === 'help' ? 'bg-slate-800 text-white' : ''
+              }`}
+            >
+              <HelpCircle className="w-3 h-3 text-cyan-400" />
+              Help
+            </button>
+            {activeMenu === 'help' && (
+              <div 
+                className="absolute top-full left-0 mt-1.5 w-60 bg-[#1a1a1e] border border-slate-800 shadow-2xl rounded-md py-1.5 z-50 text-xs text-slate-200"
+                onMouseLeave={closeMenu}
+              >
+                <button
+                  onClick={() => { onOpenHelp(); closeMenu(); }}
+                  className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-800 hover:text-white text-left"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-cyan-400" /> Guides & Shortcuts
+                </button>
+                <div className="my-1 border-t border-slate-800"></div>
+                <button
+                  onClick={() => { onOpenHelp(); closeMenu(); }}
+                  className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-slate-800 hover:text-white text-left group"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-semibold text-emerald-400">Dev: Eng. Alaa Mohammed</span>
+                    <span className="text-[10px] text-slate-400">مهندس علاء محمد</span>
+                  </div>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                </button>
+              </div>
+            )}
+          </div>
         </nav>
+
+        {/* Developer Badge in Top Bar */}
+        <div 
+          onClick={onOpenHelp}
+          className="hidden xl:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/40 border border-emerald-500/30 text-[11px] font-mono text-emerald-300 hover:bg-emerald-900/50 cursor-pointer transition-colors shadow-xs"
+          title="Developed by Eng. Alaa Mohammed (مهندس علاء محمد)"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Eng. Alaa Mohammed</span>
+        </div>
       </div>
 
       {/* Center Screen Partition & View Mode Selector */}

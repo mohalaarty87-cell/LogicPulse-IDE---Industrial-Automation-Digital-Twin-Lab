@@ -80,6 +80,27 @@ export interface LadderRung {
   isEnergized?: boolean;       // Overall rung output energized state
 }
 
+// ---- Ladder Snippet & Library System ----
+export type SnippetCategory = 
+  | 'Motors & Drives' 
+  | 'Timers & Counters' 
+  | 'Safety' 
+  | 'Interlocks' 
+  | 'Process' 
+  | 'Custom';
+
+export interface LadderSnippet {
+  id: string;
+  name: string;
+  category: SnippetCategory;
+  description: string;
+  createdAt: string;
+  isBuiltIn?: boolean;
+  rung: LadderRung;
+  ioTags: IOTag[]; // Associated IOTag definitions packaged with this rung
+  author?: string;
+}
+
 // ---- I/O Tag (shared by Ladder, Electrical, 3D, HMI, SCADA) ----
 export interface IOTag {
   id: string;

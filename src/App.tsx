@@ -10,10 +10,12 @@ import {
   ActiveSideNav, 
   ActiveBottomTab,
   DiagnosticItem,
-  Address
+  Address,
+  LadderSnippet
 } from './types/plc';
 import { SimulationEngine } from './engine/simulationEngine';
 import { projectStorage } from './storage/projectStorage';
+import { snippetStorage } from './storage/snippetStorage';
 import { sampleProjects } from './data/sampleProjects';
 import { defaultDialect, findDuplicateAddresses } from './utils/addressParser';
 
@@ -26,6 +28,7 @@ import { InspectorPanel } from './components/InspectorPanel';
 import { BottomPanel } from './components/BottomPanel';
 import { ProjectExplorerModal } from './components/ProjectExplorerModal';
 import { QuickHelpModal } from './components/QuickHelpModal';
+import { SaveSnippetModal } from './components/SaveSnippetModal';
 
 import confetti from 'canvas-confetti';
 
@@ -34,6 +37,11 @@ export function App() {
   const [project, setProject] = useState<ProjectFile>(sampleProjects[0]);
   const [allProjects, setAllProjects] = useState<ProjectFile[]>(sampleProjects);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Snippet Library State
+  const [snippets, setSnippets] = useState<LadderSnippet[]>(() => snippetStorage.getAllSnippets());
+  const [isSaveSnippetModalOpen, setIsSaveSnippetModalOpen] = useState(false);
+  const [saveSnippetRungId, setSaveSnippetRungId] = useState<string | null>(null);
 
   // Undo / Redo History
   const [history, setHistory] = useState<ProjectFile[]>([]);
@@ -715,6 +723,95 @@ export function App() {
     setViewMode('ladder');
   };
 
+  // ---- Snippet Library Actions ----
+  const handleInsertSnippet = (snippet: LadderSnippet, targetIndex?: number) => {
+    // 1. Determine insertion target index
+    const rungs = [...project.ladder];
+    const insertIdx = targetIndex !== undefined && targetIndex >= 0 && targetIndex <= rungs.length
+      ? targetIndex
+      : rungs.length;
+
+    // 2. Clone snippet rung with fresh IDs and sequential number
+    const clonedRung = snippetStorage.cloneRungWithFreshIds(snippet.rung, insertIdx);
+
+    // 3. Insert into rungs array
+    rungs.splice(insertIdx, 0, clonedRung);
+
+    // 4. Re-index all rungs sequentially
+    const reindexedRungs = rungs.map((r, idx) => ({ ...r, number: idx }));
+
+    // 5. Merge associated I/O Tags if not already in project ioMap
+    const currentTags = [...project.ioMap];
+    let addedTagCount = 0;
+
+    if (snippet.ioTags && Array.isArray(snippet.ioTags)) {
+      for (const snipTag of snippet.ioTags) {
+        const alreadyExists = currentTags.some(
+          (t) => t.address.rawString === snipTag.address.rawString || t.symbol === snipTag.symbol
+        );
+
+        if (!alreadyExists) {
+          currentTags.push({
+            ...snipTag,
+            id: `tag_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            currentValue: snipTag.address.dataType === 'COUNTER' ? 0 : false,
+            isForced: false,
+          });
+          addedTagCount++;
+        }
+      }
+    }
+
+    const updatedProject: ProjectFile = {
+      ...project,
+      ladder: reindexedRungs,
+      ioMap: currentTags,
+    };
+
+    setProject(updatedProject);
+    pushHistory(updatedProject);
+    setSelectedRungId(clonedRung.id);
+    setSelectedElementId(clonedRung.elements[0]?.id || null);
+    setViewMode('ladder');
+
+    // Confetti effect for successful insertion
+    try {
+      confetti({
+        particleCount: 25,
+        spread: 45,
+        origin: { y: 0.75, x: 0.5 },
+        colors: ['#a855f7', '#6366f1', '#38bdf8'],
+      });
+    } catch {
+      // Ignored
+    }
+  };
+
+  const handleOpenSaveSnippetModal = (rungId?: string) => {
+    setSaveSnippetRungId(rungId || selectedRungId || project.ladder[0]?.id || null);
+    setIsSaveSnippetModalOpen(true);
+  };
+
+  const handleSaveSnippet = (newSnippet: LadderSnippet) => {
+    snippetStorage.saveSnippet(newSnippet);
+    setSnippets(snippetStorage.getAllSnippets());
+    setIsSaveSnippetModalOpen(false);
+  };
+
+  const handleDeleteSnippet = (snippetId: string) => {
+    snippetStorage.deleteSnippet(snippetId);
+    setSnippets(snippetStorage.getAllSnippets());
+  };
+
+  const handleImportSnippets = (jsonText: string) => {
+    const updated = snippetStorage.importSnippetsJSON(jsonText);
+    setSnippets(snippetStorage.getAllSnippets());
+  };
+
+  const handleExportSnippets = () => {
+    snippetStorage.exportSnippetsJSON();
+  };
+
   // Keyboard Shortcuts (Ctrl+S, Ctrl+Z, Ctrl+Y, Delete)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -871,6 +968,12 @@ export function App() {
             }));
           }}
           onLoadTemplateLogic={handleLoadTemplateLogic}
+          snippets={snippets}
+          onInsertSnippet={handleInsertSnippet}
+          onOpenSaveSnippetModal={handleOpenSaveSnippetModal}
+          onDeleteSnippet={handleDeleteSnippet}
+          onImportSnippets={handleImportSnippets}
+          onExportSnippets={handleExportSnippets}
         />
 
         {/* Center Main Workspace (Ladder, 3D Twin, Split Screen, or Variables Table) */}
@@ -896,6 +999,9 @@ export function App() {
               onToggleTagValue={handleToggleTagValue}
               onToggleForce={handleToggleForce}
               theme={theme}
+              onRunSim={handleRunSim}
+              onPauseSim={handlePauseSim}
+              onStopSim={handleStopSim}
             />
           ) : viewMode === 'split' ? (
             /* Split View: Ladder on left, 3D Digital Twin on right */
@@ -920,6 +1026,10 @@ export function App() {
                   simStatus={simStatus}
                   theme={theme}
                   ioTags={project.ioMap}
+                  scanCycleMs={project.plc.scanCycleMs}
+                  scanCount={scanCount}
+                  onInsertSnippet={handleInsertSnippet}
+                  onSaveRungAsSnippet={handleOpenSaveSnippetModal}
                 />
               </div>
               <div className="flex-1 min-w-0 flex flex-col">
@@ -929,6 +1039,9 @@ export function App() {
                   onToggleTagValue={handleToggleTagValue}
                   onToggleForce={handleToggleForce}
                   theme={theme}
+                  onRunSim={handleRunSim}
+                  onPauseSim={handlePauseSim}
+                  onStopSim={handleStopSim}
                 />
               </div>
             </div>
@@ -953,6 +1066,10 @@ export function App() {
               simStatus={simStatus}
               theme={theme}
               ioTags={project.ioMap}
+              scanCycleMs={project.plc.scanCycleMs}
+              scanCount={scanCount}
+              onInsertSnippet={handleInsertSnippet}
+              onSaveRungAsSnippet={handleOpenSaveSnippetModal}
             />
           )}
         </div>
@@ -1004,6 +1121,15 @@ export function App() {
       <QuickHelpModal
         isOpen={isHelpModalOpen}
         onClose={() => setIsHelpModalOpen(false)}
+      />
+
+      <SaveSnippetModal
+        isOpen={isSaveSnippetModalOpen}
+        onClose={() => setIsSaveSnippetModalOpen(false)}
+        project={project}
+        initialRungId={saveSnippetRungId}
+        onSaveSnippet={handleSaveSnippet}
+        theme={theme}
       />
     </div>
   );

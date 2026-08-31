@@ -94,6 +94,143 @@
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* =========================================================================
+   SIMULATION POWER FLOW ANIMATION SYSTEM (Real-time Scan Cycle Traversal)
+   ========================================================================= */
+
+@keyframes currentStreamFlow {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 0;
+  }
+}
+
+@keyframes electronTravel {
+  0% {
+    left: 0%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+  85% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.1);
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.6);
+  }
+}
+
+@keyframes scanCyclePulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgba(16, 185, 129, 0.6)) brightness(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.95)) brightness(1.25);
+  }
+}
+
+@keyframes coilMagneticFlux {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.8;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4), inset 0 0 4px rgba(16, 185, 129, 0.3);
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+    box-shadow: 0 0 18px rgba(52, 211, 153, 0.9), inset 0 0 10px rgba(52, 211, 153, 0.6);
+  }
+  100% {
+    transform: scale(0.96);
+    opacity: 0.8;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4), inset 0 0 4px rgba(16, 185, 129, 0.3);
+  }
+}
+
+@keyframes circuitBreakWarning {
+  0%, 100% {
+    opacity: 0.4;
+    border-color: #e2e8f0;
+  }
+  50% {
+    opacity: 0.9;
+    border-color: #f59e0b;
+  }
+}
+
+/* Active Electric Current Flowing Wire */
+.sim-flow-active {
+  background: repeating-linear-gradient(
+    90deg,
+    #10b981 0px,
+    #34d399 8px,
+    #6ee7b7 14px,
+    #10b981 20px,
+    #059669 28px,
+    #10b981 40px
+  ) !important;
+  background-size: 40px 100% !important;
+  animation: currentStreamFlow 0.8s linear infinite, scanCyclePulse 1.2s ease-in-out infinite !important;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.85), 0 0 4px #10b981 !important;
+}
+
+/* High Speed / Turbo Scan Mode */
+.sim-flow-active-fast {
+  animation: currentStreamFlow 0.4s linear infinite, scanCyclePulse 0.6s ease-in-out infinite !important;
+}
+
+/* Slow-Mo Diagnostic Analysis Mode */
+.sim-flow-active-slow {
+  animation: currentStreamFlow 1.6s linear infinite, scanCyclePulse 2.0s ease-in-out infinite !important;
+}
+
+/* Cold / Open Circuit Wire segment */
+.sim-flow-dormant {
+  background-color: #334155 !important;
+  opacity: 0.65;
+  transition: all 0.2s ease;
+}
+
+/* Traveling Photon / Electron Bead */
+.sim-flow-electron {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 0 8px #34d399, 0 0 14px #10b981, 0 0 20px #6ee7b7;
+  pointer-events: none;
+  z-index: 5;
+  animation: electronTravel 1.0s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.sim-flow-electron-fast {
+  animation: electronTravel 0.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.sim-flow-electron-slow {
+  animation: electronTravel 2.0s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Magnetic Flux Field for Energized Coils */
+.sim-magnetic-flux {
+  animation: coilMagneticFlux 1.1s ease-in-out infinite !important;
+}
+
+/* Circuit Breakpoint Marker */
+.sim-circuit-break-marker {
+  animation: circuitBreakWarning 1.5s ease-in-out infinite;
+}
+
 /* Smooth Ladder Element Mount/Unmount/Modification Animations */
 @keyframes ladderElementPopIn {
   0% {

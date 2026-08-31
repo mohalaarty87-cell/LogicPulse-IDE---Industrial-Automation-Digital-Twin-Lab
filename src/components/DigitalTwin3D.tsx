@@ -27,15 +27,25 @@ import {
   RefreshCw,
   PlusCircle,
   ShieldCheck,
-  PackageCheck
+  PackageCheck,
+  Library,
+  Square
 } from 'lucide-react';
 import { IOTag, SimulationStatus, ThemeStyle, ProjectFile } from '../types/plc';
+import { 
+  DigitalTwinCatalogModal, 
+  PlacedPrimitiveInstance, 
+  CatalogItemDefinition 
+} from './DigitalTwinCatalog';
 
 interface DigitalTwin3DProps {
   project: ProjectFile;
   simStatus: SimulationStatus;
   onToggleTagValue: (tagId: string) => void;
   onToggleForce: (tagId: string) => void;
+  onRunSim?: () => void;
+  onPauseSim?: () => void;
+  onStopSim?: () => void;
   theme: ThemeStyle;
 }
 
@@ -61,6 +71,9 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
   simStatus,
   onToggleTagValue,
   onToggleForce,
+  onRunSim,
+  onPauseSim,
+  onStopSim,
   theme,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,6 +99,24 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
   const [physicsActive, setPhysicsActive] = useState(true);
   const [boxCount, setBoxCount] = useState(1);
   const [sortedCount, setSortedCount] = useState(0);
+
+  // Real-time Telemetry state for animated gauges
+  const [telemetry, setTelemetry] = useState({
+    beltSpeedMps: 0,
+    motorRPM: 0,
+    waterLevelPct: 37,
+    flowRateLpm: 0,
+    pusherActive: false,
+    activeInputsCount: 0,
+    activeOutputsCount: 0,
+  });
+
+  // 3D Primitive Catalog & Dynamic Placement State
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [placedInstances, setPlacedInstances] = useState<PlacedPrimitiveInstance[]>([]);
+  const placedInstancesRef = useRef<PlacedPrimitiveInstance[]>([]);
+  placedInstancesRef.current = placedInstances;
+  const sceneObjectsGroupRef = useRef<THREE.Group | null>(null);
 
   // Dynamic simulation internal states
   const simStateRef = useRef({
@@ -286,9 +317,81 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
     // Dynamic Meshes Holder
     const sceneObjectsGroup = new THREE.Group();
     scene.add(sceneObjectsGroup);
+    sceneObjectsGroupRef.current = sceneObjectsGroup;
 
     const interactiveList: THREE.Object3D[] = [];
     interactiveObjectsRef.current = interactiveList;
+
+    // Mount any previously placed custom catalog primitives into the fresh scene
+    placedInstancesRef.current.forEach((inst) => {
+      sceneObjectsGroup.add(inst.primitiveResult.group);
+      inst.primitiveResult.interactiveMeshes.forEach((mesh) => {
+        interactiveList.push(mesh);
+      });
+    });
+
+    // Helper to generate a high-contrast industrial conveyor belt texture with chevron motion indicators
+    const createConveyorBeltTexture = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d')!;
+
+      // Belt dark rubber base
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, 512, 128);
+
+      // Grooved tracks
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 3;
+      for (let x = 0; x < 512; x += 16) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 128);
+        ctx.stroke();
+      }
+
+      // Industrial safety hazard border stripes (yellow & black angled stripes)
+      const bandH = 14;
+      for (let x = -40; x < 552; x += 24) {
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + 12, 0);
+        ctx.lineTo(x, bandH);
+        ctx.lineTo(x - 12, bandH);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(x, 128 - bandH);
+        ctx.lineTo(x + 12, 128 - bandH);
+        ctx.lineTo(x, 128);
+        ctx.lineTo(x - 12, 128);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // High-visibility animated directional motion chevrons (>>> >>> >>>)
+      ctx.fillStyle = '#38bdf8';
+      for (let x = 20; x < 512; x += 64) {
+        ctx.beginPath();
+        ctx.moveTo(x, 40);
+        ctx.lineTo(x + 22, 64);
+        ctx.lineTo(x, 88);
+        ctx.lineTo(x + 14, 88);
+        ctx.lineTo(x + 36, 64);
+        ctx.lineTo(x + 14, 40);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(3, 1);
+      return texture;
+    };
 
     // Physics tracked boxes
     const physicsBoxes: PhysicsBoxEntity[] = [];
@@ -296,22 +399,34 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
     // Track dynamic mesh parts for animation & PLC state updates
     const animatedParts: {
       rollers: THREE.Mesh[];
+      beltTexture?: THREE.CanvasTexture;
+      conveyorMotorFan?: THREE.Mesh;
+      conveyorMotorAura?: THREE.Mesh;
+      conveyorMotorGroup?: THREE.Group;
       pusherMesh?: THREE.Mesh;
       pusherBody?: CANNON.Body;
+      pusherBurstPoints?: THREE.Points;
       sensorHeadMesh?: THREE.Mesh;
       sensorBeamMesh?: THREE.Mesh;
+      sensorSparkPoints?: THREE.Points;
       waterMesh?: THREE.Mesh;
       highFloatMesh?: THREE.Mesh;
       lowFloatMesh?: THREE.Mesh;
       pumpImpellerMesh?: THREE.Mesh;
+      pumpAuraMesh?: THREE.Mesh;
+      waterStreamPoints?: THREE.Points;
+      waterBubblePoints?: THREE.Points;
       alarmLightMesh?: THREE.Mesh;
       alarmLightSource?: THREE.PointLight;
       trafficRedMesh?: THREE.Mesh;
       trafficYellowMesh?: THREE.Mesh;
       trafficGreenMesh?: THREE.Mesh;
       trafficCarMesh?: THREE.Mesh;
+      trafficCarWheels?: THREE.Mesh[];
       motorRotorMesh?: THREE.Mesh;
       motorFanMesh?: THREE.Mesh;
+      motorAuraMesh?: THREE.Mesh;
+      motorGroup?: THREE.Group;
       gearMesh1?: THREE.Mesh;
       runPilotMesh?: THREE.Mesh;
       runPilotLight?: THREE.PointLight;
@@ -401,6 +516,20 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       bedMesh.receiveShadow = true;
       sceneObjectsGroup.add(bedMesh);
 
+      // Top Animated Moving Belt Surface with Procedural Texture & Chevron Flow Markers
+      const beltTexture = createConveyorBeltTexture();
+      const beltTopMat = new THREE.MeshStandardMaterial({
+        map: beltTexture,
+        roughness: 0.8,
+        metalness: 0.15,
+      });
+      const beltTopMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 1.95), beltTopMat);
+      beltTopMesh.rotation.x = -Math.PI / 2;
+      beltTopMesh.position.set(0, 1.405, 0);
+      beltTopMesh.receiveShadow = true;
+      sceneObjectsGroup.add(beltTopMesh);
+      animatedParts.beltTexture = beltTexture;
+
       // Conveyor Bed Physics Static Body (Cannon.js)
       const bedShape = new CANNON.Box(new CANNON.Vec3(5.0, 0.2, 1.0));
       const bedBody = new CANNON.Body({
@@ -411,18 +540,65 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       });
       world.addBody(bedBody);
 
+      // Conveyor Drive AC Induction Motor (Mounted at Head Drum x = 5.2)
+      const convMotorGroup = new THREE.Group();
+      convMotorGroup.position.set(5.25, 1.35, 1.2);
+
+      const convMotorBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.32, 0.32, 0.85, 20),
+        new THREE.MeshStandardMaterial({ color: 0x1e3a8a, metalness: 0.7, roughness: 0.3 })
+      );
+      convMotorBody.rotation.z = Math.PI / 2;
+
+      const convFanCover = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.33, 0.33, 0.22, 20),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6 })
+      );
+      convFanCover.rotation.z = Math.PI / 2;
+      convFanCover.position.set(0.52, 0, 0);
+
+      const convFanBlades = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.55, 0.55),
+        new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+      );
+      convFanBlades.position.set(0.52, 0, 0);
+
+      // Electromagnetic Stator Power Halo
+      const convAuraGeo = new THREE.TorusGeometry(0.35, 0.035, 12, 24);
+      const convAuraMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0 });
+      const convAuraMesh = new THREE.Mesh(convAuraGeo, convAuraMat);
+      convAuraMesh.rotation.y = Math.PI / 2;
+
+      // Drive Pulley
+      const convPulley = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2, 0.2, 0.12, 16),
+        new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.85 })
+      );
+      convPulley.rotation.z = Math.PI / 2;
+      convPulley.position.set(-0.5, 0, 0);
+
+      convMotorGroup.add(convMotorBody, convFanCover, convFanBlades, convAuraMesh, convPulley);
+      sceneObjectsGroup.add(convMotorGroup);
+      animatedParts.conveyorMotorFan = convFanBlades;
+      animatedParts.conveyorMotorAura = convAuraMesh;
+      animatedParts.conveyorMotorGroup = convMotorGroup;
+
+      registerInteractive(convMotorBody, {
+        tagIdentifier: 'Q0.0',
+        name: 'Conveyor Drive Motor (Q0.0 / MOTOR_RUN)',
+        type: 'actuator',
+        description: 'Main conveyor 3-phase drive motor. Click to toggle motor command tag.'
+      });
+
       // Side Guard Rails with Diverter Gap (Gap from x = 1.3 to x = 2.7 allows pusher to divert box into bin)
-      // Front Left Rail
       const rail1Geo = new THREE.BoxGeometry(6.3, 0.35, 0.1);
       const rail1 = new THREE.Mesh(rail1Geo, frameMat);
       rail1.position.set(-1.85, 1.55, 1.05);
       
-      // Front Right Rail (after diverter chute)
       const rail2Geo = new THREE.BoxGeometry(2.3, 0.35, 0.1);
       const rail2 = new THREE.Mesh(rail2Geo, frameMat);
       rail2.position.set(3.85, 1.55, 1.05);
 
-      // Rear Continuous Rail
       const railRearGeo = new THREE.BoxGeometry(10, 0.35, 0.1);
       const railRear = new THREE.Mesh(railRearGeo, frameMat);
       railRear.position.set(0, 1.55, -1.05);
@@ -492,12 +668,33 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
 
       // Optical Laser Beam Line across belt
       const beamGeo = new THREE.CylinderGeometry(0.015, 0.015, 2.1);
-      const beamMat = new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.75 });
+      const beamMat = new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.85 });
       const sensorBeam = new THREE.Mesh(beamGeo, beamMat);
       sensorBeam.rotation.x = Math.PI / 2;
       sensorBeam.position.set(0, 1.7, 0);
       sceneObjectsGroup.add(sensorBeam);
       animatedParts.sensorBeamMesh = sensorBeam;
+
+      // Laser Optical Spark Particles
+      const sparkGeo = new THREE.BufferGeometry();
+      const sparkCount = 24;
+      const sparkPos = new Float32Array(sparkCount * 3);
+      for (let i = 0; i < sparkCount; i++) {
+        sparkPos[i * 3] = 0;
+        sparkPos[i * 3 + 1] = 1.7;
+        sparkPos[i * 3 + 2] = 0;
+      }
+      sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+      const sparkMat = new THREE.PointsMaterial({
+        color: 0x4ade80,
+        size: 0.14,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+      });
+      const sparkPoints = new THREE.Points(sparkGeo, sparkMat);
+      sceneObjectsGroup.add(sparkPoints);
+      animatedParts.sensorSparkPoints = sparkPoints;
 
       registerInteractive(sensorBeam, {
         tagIdentifier: 'I0.0',
@@ -552,6 +749,27 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       pusherGroup.add(rodMesh, pushPaddleMesh);
       sceneObjectsGroup.add(cylinderMesh, pusherGroup);
       animatedParts.pusherMesh = pusherGroup as any;
+
+      // Pneumatic Exhaust Burst Steam Particles
+      const burstGeo = new THREE.BufferGeometry();
+      const burstCount = 36;
+      const burstPos = new Float32Array(burstCount * 3);
+      for (let i = 0; i < burstCount; i++) {
+        burstPos[i * 3] = 2.0;
+        burstPos[i * 3 + 1] = 1.6;
+        burstPos[i * 3 + 2] = -1.6;
+      }
+      burstGeo.setAttribute('position', new THREE.BufferAttribute(burstPos, 3));
+      const burstMat = new THREE.PointsMaterial({
+        color: 0x93c5fd,
+        size: 0.2,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+      });
+      const burstPoints = new THREE.Points(burstGeo, burstMat);
+      sceneObjectsGroup.add(burstPoints);
+      animatedParts.pusherBurstPoints = burstPoints;
 
       // Kinematic Cannon.js Physics Body for Pusher Solenoid Actuator
       const pusherPhysBody = new CANNON.Body({
@@ -672,6 +890,48 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       sceneObjectsGroup.add(waterMesh);
       animatedParts.waterMesh = waterMesh;
 
+      // Cascading Waterfall Stream Particles (From inlet pipe into water tank)
+      const streamCount = 50;
+      const streamGeo = new THREE.BufferGeometry();
+      const streamPos = new Float32Array(streamCount * 3);
+      for (let i = 0; i < streamCount; i++) {
+        streamPos[i * 3] = -1.2 + (Math.random() - 0.5) * 0.15;
+        streamPos[i * 3 + 1] = 4.5 - (i / streamCount) * 3.5;
+        streamPos[i * 3 + 2] = (Math.random() - 0.5) * 0.15;
+      }
+      streamGeo.setAttribute('position', new THREE.BufferAttribute(streamPos, 3));
+      const streamMat = new THREE.PointsMaterial({
+        color: 0x38bdf8,
+        size: 0.16,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+      });
+      const streamPoints = new THREE.Points(streamGeo, streamMat);
+      sceneObjectsGroup.add(streamPoints);
+      animatedParts.waterStreamPoints = streamPoints;
+
+      // Rising Bubble Particles inside liquid tank
+      const bubbleCount = 60;
+      const bubbleGeo = new THREE.BufferGeometry();
+      const bubblePos = new Float32Array(bubbleCount * 3);
+      for (let i = 0; i < bubbleCount; i++) {
+        bubblePos[i * 3] = (Math.random() - 0.5) * 2.8;
+        bubblePos[i * 3 + 1] = 0.6 + Math.random() * 3.0;
+        bubblePos[i * 3 + 2] = (Math.random() - 0.5) * 2.8;
+      }
+      bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePos, 3));
+      const bubbleMat = new THREE.PointsMaterial({
+        color: 0xe0f2fe,
+        size: 0.12,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+      });
+      const bubblePoints = new THREE.Points(bubbleGeo, bubbleMat);
+      sceneObjectsGroup.add(bubblePoints);
+      animatedParts.waterBubblePoints = bubblePoints;
+
       // Float Switch Sensors (Interactive Clickable Sensors)
       const floatSensorMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.4 });
       const lowFloat = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), floatSensorMat.clone());
@@ -715,6 +975,13 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       pumpMotor.rotation.z = Math.PI / 2;
       pumpMotor.position.set(-4.2, 0.8, 0);
 
+      // Pump Electromagnetic Power Halo
+      const pumpAuraGeo = new THREE.TorusGeometry(0.65, 0.04, 12, 24);
+      const pumpAuraMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0 });
+      const pumpAuraMesh = new THREE.Mesh(pumpAuraGeo, pumpAuraMat);
+      pumpAuraMesh.position.set(-3.5, 0.8, 0);
+      animatedParts.pumpAuraMesh = pumpAuraMesh;
+
       const pipeMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 });
       const pipeMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.8), pipeMat);
       pipeMesh.position.set(-3.5, 2.7, 0);
@@ -723,7 +990,7 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       pipeOverTop.rotation.z = Math.PI / 2;
       pipeOverTop.position.set(-2.3, 4.6, 0);
       
-      sceneObjectsGroup.add(pumpBody, pumpMotor, pipeMesh, pipeOverTop);
+      sceneObjectsGroup.add(pumpBody, pumpMotor, pumpAuraMesh, pipeMesh, pipeOverTop);
 
       registerInteractive(pumpBody, {
         tagIdentifier: 'Q0.0',
@@ -825,47 +1092,75 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
         description: 'Click to trigger pedestrian walk request.'
       });
 
-      // Approaching Car
+      // Approaching Car with Wheels
       const carGroup = new THREE.Group();
       const carBody = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.7, 3.2), new THREE.MeshStandardMaterial({ color: 0x3b82f6, metalness: 0.5, roughness: 0.3 }));
       carBody.position.y = 0.55;
       const carCabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.6, 1.8), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
       carCabin.position.set(0, 1.1, -0.2);
       carGroup.add(carBody, carCabin);
+
+      const wheels: THREE.Mesh[] = [];
+      const wheelGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.15, 16);
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+      [
+        [-0.85, 0.26, 0.9],
+        [0.85, 0.26, 0.9],
+        [-0.85, 0.26, -0.9],
+        [0.85, 0.26, -0.9],
+      ].forEach((pos) => {
+        const w = new THREE.Mesh(wheelGeo, wheelMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(pos[0], pos[1], pos[2]);
+        carGroup.add(w);
+        wheels.push(w);
+      });
+
       carGroup.position.set(-1.2, 0, -8);
       sceneObjectsGroup.add(carGroup);
       animatedParts.trafficCarMesh = carGroup as any;
+      animatedParts.trafficCarWheels = wheels;
 
     } else if (selectedScene === 'motor') {
       const motorCastMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, metalness: 0.7, roughness: 0.3 });
-      const finMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, metalness: 0.8, roughness: 0.3 });
       const shaftMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.1 });
+
+      const motorGroup = new THREE.Group();
 
       const basePlate = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.3, 2.6), new THREE.MeshStandardMaterial({ color: 0x334155 }));
       basePlate.position.set(0, 0.15, 0);
-      sceneObjectsGroup.add(basePlate);
+      motorGroup.add(basePlate);
 
       const stator = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.4, 32), motorCastMat);
       stator.rotation.z = Math.PI / 2;
       stator.position.set(-0.6, 1.4, 0);
-      sceneObjectsGroup.add(stator);
+      motorGroup.add(stator);
+
+      // Stator Electromagnetic Flux Aura
+      const motorAuraGeo = new THREE.TorusGeometry(1.28, 0.06, 12, 32);
+      const motorAuraMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0 });
+      const motorAuraMesh = new THREE.Mesh(motorAuraGeo, motorAuraMat);
+      motorAuraMesh.rotation.y = Math.PI / 2;
+      motorAuraMesh.position.set(-0.6, 1.4, 0);
+      motorGroup.add(motorAuraMesh);
+      animatedParts.motorAuraMesh = motorAuraMesh;
 
       // Rotating Rotor & Drive Shaft
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4.2, 24), shaftMat);
       shaft.rotation.z = Math.PI / 2;
       shaft.position.set(0.3, 1.4, 0);
-      sceneObjectsGroup.add(shaft);
+      motorGroup.add(shaft);
       animatedParts.motorRotorMesh = shaft;
 
       const fanHub = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.3, 12), new THREE.MeshStandardMaterial({ color: 0x64748b }));
       fanHub.rotation.z = Math.PI / 2;
       fanHub.position.set(-1.9, 1.4, 0);
-      sceneObjectsGroup.add(fanHub);
+      motorGroup.add(fanHub);
       animatedParts.motorFanMesh = fanHub;
 
       const gearBox = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.8, 1.6), new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 }));
       gearBox.position.set(1.6, 1.4, 0);
-      sceneObjectsGroup.add(gearBox);
+      motorGroup.add(gearBox);
 
       const pulley = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.25, 24), new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.8 }));
       pulley.rotation.z = Math.PI / 2;
@@ -876,8 +1171,11 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
       
       const pulleyGroup = new THREE.Group();
       pulleyGroup.add(pulley, marker);
-      sceneObjectsGroup.add(pulleyGroup);
+      motorGroup.add(pulleyGroup);
       animatedParts.gearMesh1 = pulleyGroup as any;
+
+      sceneObjectsGroup.add(motorGroup);
+      animatedParts.motorGroup = motorGroup;
 
       registerInteractive(stator, {
         tagIdentifier: 'Q0.0',
@@ -969,6 +1267,7 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
 
     // ================= ANIMATION & PLC SYNCHRONIZATION LOOP =================
     let lastTime = performance.now();
+    let lastTelemetryUpdate = 0;
 
     const animate = (time: number) => {
       animationFrameIdRef.current = requestAnimationFrame(animate);
@@ -992,16 +1291,60 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
 
         if (motorOn) {
           sim.conveyorPos += delta * 2.5;
+          
+          // Scroll high-visibility chevron belt texture
+          if (animatedParts.beltTexture) {
+            animatedParts.beltTexture.offset.x -= delta * 0.32;
+          }
+
+          // Spin rollers
           animatedParts.rollers.forEach((r) => {
-            r.rotation.y += delta * 7;
+            r.rotation.y += delta * 7.5;
           });
+
+          // Spin drive motor fan and pulse electromagnetic stator aura
+          if (animatedParts.conveyorMotorFan) {
+            animatedParts.conveyorMotorFan.rotation.x += delta * 32.0;
+          }
+          if (animatedParts.conveyorMotorAura) {
+            const auraMat = animatedParts.conveyorMotorAura.material as THREE.MeshBasicMaterial;
+            auraMat.opacity = 0.5 + Math.sin(time * 0.012) * 0.3;
+          }
+          if (animatedParts.conveyorMotorGroup) {
+            // Mechanical micro-vibration under load
+            animatedParts.conveyorMotorGroup.position.y = 1.35 + Math.sin(time * 0.05) * 0.003;
+          }
+        } else {
+          if (animatedParts.conveyorMotorAura) {
+            (animatedParts.conveyorMotorAura.material as THREE.MeshBasicMaterial).opacity = 0;
+          }
         }
 
         // Pusher Kinematic Extension & Physical Cannon.js Kinematic Body
         if (ejectorOn) {
           sim.pusherZ = Math.min(sim.pusherZ + delta * 7.5, 1.25);
+          
+          // Emit pneumatic exhaust blast steam particles
+          if (animatedParts.pusherBurstPoints) {
+            const burstMat = animatedParts.pusherBurstPoints.material as THREE.PointsMaterial;
+            burstMat.opacity = 0.85;
+            const posAttr = animatedParts.pusherBurstPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+            for (let i = 0; i < posAttr.count; i++) {
+              posAttr.setXYZ(
+                i,
+                2.0 + (Math.random() - 0.5) * 0.45,
+                1.6 + (Math.random() - 0.5) * 0.35 + (sim.pusherZ * 0.2),
+                -1.6 + (Math.random() - 0.5) * 0.35 - (i * 0.015)
+              );
+            }
+            posAttr.needsUpdate = true;
+          }
         } else {
           sim.pusherZ = Math.max(sim.pusherZ - delta * 5.0, 0);
+          if (animatedParts.pusherBurstPoints) {
+            const burstMat = animatedParts.pusherBurstPoints.material as THREE.PointsMaterial;
+            burstMat.opacity = Math.max(burstMat.opacity - delta * 3.0, 0);
+          }
         }
 
         if (animatedParts.pusherMesh) {
@@ -1090,6 +1433,26 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
             isLaserTriggered ? 0x22c55e : 0xf59e0b
           );
         }
+
+        // Laser Contact Sparks
+        if (animatedParts.sensorSparkPoints) {
+          const sparkMat = animatedParts.sensorSparkPoints.material as THREE.PointsMaterial;
+          if (isLaserTriggered) {
+            sparkMat.opacity = 0.85;
+            const posAttr = animatedParts.sensorSparkPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+            for (let i = 0; i < posAttr.count; i++) {
+              posAttr.setXYZ(
+                i,
+                (Math.random() - 0.5) * 0.25,
+                1.7 + (Math.random() - 0.5) * 0.25,
+                (Math.random() - 0.5) * 0.4
+              );
+            }
+            posAttr.needsUpdate = true;
+          } else {
+            sparkMat.opacity = 0;
+          }
+        }
       }
 
       // ============ SCENE 2: TANK & PUMP ============
@@ -1101,13 +1464,52 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
 
         if (pumpOn) {
           sim.waterLevel = Math.min(sim.waterLevel + delta * 0.8, 3.9);
+          if (animatedParts.pumpAuraMesh) {
+            const auraMat = animatedParts.pumpAuraMesh.material as THREE.MeshBasicMaterial;
+            auraMat.opacity = 0.6 + Math.sin(time * 0.015) * 0.3;
+          }
+
+          // Animate Falling Waterfall Stream
+          if (animatedParts.waterStreamPoints) {
+            const streamMat = animatedParts.waterStreamPoints.material as THREE.PointsMaterial;
+            streamMat.opacity = 0.9;
+            const posAttr = animatedParts.waterStreamPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+            for (let i = 0; i < posAttr.count; i++) {
+              let y = posAttr.getY(i) - delta * 6.5;
+              if (y < 0.6 + sim.waterLevel) {
+                y = 4.5;
+              }
+              posAttr.setY(i, y);
+            }
+            posAttr.needsUpdate = true;
+          }
         } else {
           sim.waterLevel = Math.max(sim.waterLevel - delta * 0.15, 0.4);
+          if (animatedParts.pumpAuraMesh) {
+            (animatedParts.pumpAuraMesh.material as THREE.MeshBasicMaterial).opacity = 0;
+          }
+          if (animatedParts.waterStreamPoints) {
+            (animatedParts.waterStreamPoints.material as THREE.PointsMaterial).opacity = 0;
+          }
         }
 
         if (animatedParts.waterMesh) {
           animatedParts.waterMesh.scale.y = Math.max(sim.waterLevel, 0.1);
           animatedParts.waterMesh.position.y = 0.6 + sim.waterLevel / 2;
+        }
+
+        // Animate rising underwater bubbles inside tank
+        if (animatedParts.waterBubblePoints) {
+          const posAttr = animatedParts.waterBubblePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+          const maxWaterY = 0.6 + sim.waterLevel;
+          for (let i = 0; i < posAttr.count; i++) {
+            let y = posAttr.getY(i) + delta * (pumpOn ? 1.8 : 0.4);
+            if (y > maxWaterY) {
+              y = 0.6 + Math.random() * 0.3;
+            }
+            posAttr.setY(i, y);
+          }
+          posAttr.needsUpdate = true;
         }
 
         const isLowPhysically = sim.waterLevel <= 1.3;
@@ -1174,15 +1576,25 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
         }
 
         if (animatedParts.trafficCarMesh) {
+          let carSpeed = 0;
           if (greenOn) {
-            sim.carPosition += delta * 4.0;
+            carSpeed = 4.0;
+            sim.carPosition += delta * carSpeed;
             if (sim.carPosition > 9.0) sim.carPosition = -8.0;
           } else if (redOn || yellowOn) {
             if (sim.carPosition < -2.8) {
-              sim.carPosition = Math.min(sim.carPosition + delta * 3.0, -2.8);
+              carSpeed = 3.0;
+              sim.carPosition = Math.min(sim.carPosition + delta * carSpeed, -2.8);
             }
           }
           animatedParts.trafficCarMesh.position.z = sim.carPosition;
+
+          // Rotate car wheels
+          if (animatedParts.trafficCarWheels) {
+            animatedParts.trafficCarWheels.forEach((w) => {
+              w.rotation.x += delta * (carSpeed * 4.0);
+            });
+          }
         }
       }
 
@@ -1193,10 +1605,10 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
         const runLampOn = isTagTrue('Q0.1') || isTagTrue('RUN_LAMP') || fwdOn || revOn;
 
         if (fwdOn) {
-          sim.motorRPM = Math.min(sim.motorRPM + delta * 800, 1450);
+          sim.motorRPM = Math.min(sim.motorRPM + delta * 900, 1480);
           sim.motorAngle += (sim.motorRPM / 60) * (2 * Math.PI) * delta;
         } else if (revOn) {
-          sim.motorRPM = Math.max(sim.motorRPM - delta * 800, -1450);
+          sim.motorRPM = Math.max(sim.motorRPM - delta * 900, -1480);
           sim.motorAngle += (sim.motorRPM / 60) * (2 * Math.PI) * delta;
         } else {
           sim.motorRPM *= 0.94;
@@ -1213,6 +1625,21 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
           animatedParts.gearMesh1.rotation.x = sim.motorAngle * 0.25;
         }
 
+        // Electromagnetic Stator Power Halo
+        if (animatedParts.motorAuraMesh) {
+          const auraMat = animatedParts.motorAuraMesh.material as THREE.MeshBasicMaterial;
+          if (Math.abs(sim.motorRPM) > 50) {
+            auraMat.opacity = 0.5 + Math.sin(time * 0.02) * 0.3;
+          } else {
+            auraMat.opacity = 0;
+          }
+        }
+
+        // High-speed chassis micro-vibration
+        if (animatedParts.motorGroup && Math.abs(sim.motorRPM) > 500) {
+          animatedParts.motorGroup.position.y = Math.sin(time * 0.06) * 0.003;
+        }
+
         if (animatedParts.runPilotMesh && animatedParts.runPilotLight) {
           const isLampActive = Math.abs(sim.motorRPM) > 20 || runLampOn;
           (animatedParts.runPilotMesh.material as THREE.MeshStandardMaterial).emissive.setHex(
@@ -1220,6 +1647,39 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
           );
           animatedParts.runPilotLight.intensity = isLampActive ? 1.5 : 0;
         }
+      }
+
+      // ============ UPDATE DYNAMICALLY PLACED CATALOG PRIMITIVES ============
+      placedInstancesRef.current.forEach((inst) => {
+        inst.primitiveResult.update(delta, (addrOrSym) => isTagTrue(addrOrSym));
+      });
+
+      // ============ PERIODIC TELEMETRY METRICS CALCULATION ============
+      if (time - lastTelemetryUpdate > 80) {
+        lastTelemetryUpdate = time;
+        const motorOn = isRunning && (isTagTrue('Q0.0') || isTagTrue('MOTOR_RUN') || isTagTrue('MOTOR_OUT') || isTagTrue('SYS_ENABLE') || isTagTrue('MOTOR_FWD'));
+        const pumpOn = isRunning && (isTagTrue('Q0.0') || isTagTrue('PUMP_VALVE') || isTagTrue('MOTOR_OUT'));
+        const pusherOn = isTagTrue('Q0.1') || isTagTrue('PUSHER_SOL');
+        
+        let inputsActive = 0;
+        let outputsActive = 0;
+        project.ioMap.forEach((t) => {
+          const val = t.isForced && t.forcedValue !== undefined ? t.forcedValue : t.currentValue;
+          if (val) {
+            if (t.address.area === 'INPUT') inputsActive++;
+            if (t.address.area === 'OUTPUT') outputsActive++;
+          }
+        });
+
+        setTelemetry({
+          beltSpeedMps: motorOn ? 1.85 : 0,
+          motorRPM: Math.round(selectedScene === 'motor' ? Math.abs(sim.motorRPM) : (motorOn ? 1450 : 0)),
+          waterLevelPct: Math.round((sim.waterLevel / 4.0) * 100),
+          flowRateLpm: pumpOn ? 45.2 : 0,
+          pusherActive: pusherOn || sim.pusherZ > 0.1,
+          activeInputsCount: inputsActive,
+          activeOutputsCount: outputsActive,
+        });
       }
 
       renderer.render(scene, camera);
@@ -1391,6 +1851,58 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
     };
   }, [selectedScene, theme, simStatus, project, physicsActive]);
 
+  // Handler to place a new 3D primitive into the active twin
+  const handlePlacePrimitive = (
+    item: CatalogItemDefinition,
+    boundTag: string,
+    pos: [number, number, number]
+  ) => {
+    const primitiveResult = item.factory({
+      position: new THREE.Vector3(...pos),
+      boundTag: boundTag,
+      name: `${item.name} (${boundTag})`,
+    });
+
+    const newInstance: PlacedPrimitiveInstance = {
+      instanceId: `inst_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      catalogId: item.id,
+      name: `${item.name} (${boundTag})`,
+      category: item.category,
+      boundTag: boundTag,
+      position: pos,
+      rotation: [0, 0, 0],
+      primitiveResult: primitiveResult,
+    };
+
+    setPlacedInstances((prev) => [...prev, newInstance]);
+
+    // If Three.js scene group is active, immediately add and register for raycast
+    if (sceneObjectsGroupRef.current) {
+      sceneObjectsGroupRef.current.add(primitiveResult.group);
+      primitiveResult.interactiveMeshes.forEach((mesh) => {
+        mesh.userData = {
+          tagIdentifier: boundTag,
+          name: `${item.name} (${boundTag})`,
+          type: item.category === 'sensor' || item.category === 'safety' ? 'sensor' : 'actuator',
+          description: `Custom placed 3D primitive bound to ${boundTag}`,
+        };
+        interactiveObjectsRef.current.push(mesh);
+      });
+    }
+  };
+
+  // Handler to remove a placed primitive from scene
+  const handleRemoveInstance = (instanceId: string) => {
+    const instance = placedInstances.find((i) => i.instanceId === instanceId);
+    if (instance && sceneObjectsGroupRef.current) {
+      sceneObjectsGroupRef.current.remove(instance.primitiveResult.group);
+      interactiveObjectsRef.current = interactiveObjectsRef.current.filter(
+        (obj) => !instance.primitiveResult.interactiveMeshes.includes(obj)
+      );
+    }
+    setPlacedInstances((prev) => prev.filter((i) => i.instanceId !== instanceId));
+  };
+
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${
       theme === 'modern' ? 'bg-slate-100 text-slate-800' : 'bg-[#07070a] text-slate-200'
@@ -1451,6 +1963,55 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
               <Gauge className="w-3.5 h-3.5" /> Motor & Gearbox
             </button>
           </div>
+
+          {/* Quick Simulation State Controls */}
+          {(onRunSim || onStopSim) && (
+            <div className="flex items-center gap-1 bg-[#1a1a1e] p-0.5 rounded border border-slate-800 text-xs ml-1">
+              {onRunSim && (
+                <button
+                  onClick={onRunSim}
+                  className={`px-2.5 py-1 rounded font-mono font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    simStatus === 'RUNNING'
+                      ? 'bg-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                      : 'text-emerald-400 hover:bg-emerald-950/40'
+                  }`}
+                  title="Run PLC scan loop and physical animations"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>RUN</span>
+                </button>
+              )}
+
+              {onPauseSim && (
+                <button
+                  onClick={onPauseSim}
+                  className={`px-2 py-1 rounded font-mono font-bold text-xs flex items-center gap-1 transition-all cursor-pointer ${
+                    simStatus === 'PAUSED'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-amber-400 hover:bg-amber-950/40'
+                  }`}
+                  title="Pause simulation"
+                >
+                  <Pause className="w-3 h-3" />
+                </button>
+              )}
+
+              {onStopSim && (
+                <button
+                  onClick={onStopSim}
+                  className={`px-2.5 py-1 rounded font-mono font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    simStatus === 'STOPPED'
+                      ? 'bg-red-600/80 text-white'
+                      : 'text-red-400 hover:bg-red-950/40'
+                  }`}
+                  title="Stop PLC execution and halt machinery"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  <span>STOP</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Camera Views, Physics controls & HUD Toggles */}
@@ -1504,6 +2065,20 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
               FRONT
             </button>
           </div>
+
+          <button
+            onClick={() => setIsCatalogOpen(true)}
+            className="px-2.5 py-1 rounded bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Open 3D Component Catalog Library to select and place new sensors or actuators"
+          >
+            <Library className="w-3.5 h-3.5" />
+            <span>+ Component Catalog</span>
+            {placedInstances.length > 0 && (
+              <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center font-bold">
+                {placedInstances.length}
+              </span>
+            )}
+          </button>
 
           <button
             onClick={() => setShowTagsHUD(!showTagsHUD)}
@@ -1651,19 +2226,94 @@ export const DigitalTwin3D: React.FC<DigitalTwin3DProps> = ({
         </div>
       )}
 
-      {/* Bottom telemetry footer */}
-      <div className="absolute bottom-3 left-4 px-3 py-1.5 rounded-full bg-[#111114]/80 backdrop-blur-md border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center gap-3 pointer-events-none z-20">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>Digital Twin: <strong>{selectedScene.toUpperCase()}</strong></span>
-        </span>
-        <span className="text-slate-600">|</span>
-        <span className="text-indigo-400 flex items-center gap-1">
-          <Atom className="w-3 h-3" /> Cannon.js RigidBody Engine
-        </span>
-        <span className="text-slate-600">|</span>
-        <span>Collisions: Active</span>
+      {/* Bottom telemetry footer & Live Operational Meters */}
+      <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between pointer-events-none z-20">
+        <div className="px-3 py-1.5 rounded-lg bg-[#111114]/90 backdrop-blur-md border border-slate-800 text-[11px] font-mono text-slate-300 flex items-center gap-3 pointer-events-auto shadow-xl">
+          <span className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${simStatus === 'RUNNING' ? 'bg-emerald-400 animate-pulse' : simStatus === 'PAUSED' ? 'bg-amber-400' : 'bg-red-400'}`}></span>
+            <span className="text-white font-bold">{selectedScene.toUpperCase()}</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+              simStatus === 'RUNNING' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+            }`}>
+              {simStatus}
+            </span>
+          </span>
+
+          <span className="text-slate-700">|</span>
+
+          {/* Dynamic Scene Telemetry Readouts */}
+          {selectedScene === 'conveyor' && (
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-slate-400">
+                <span>Belt:</span>
+                <strong className={telemetry.beltSpeedMps > 0 ? 'text-emerald-400' : 'text-slate-500'}>
+                  {telemetry.beltSpeedMps > 0 ? `${telemetry.beltSpeedMps} m/s` : 'STOPPED'}
+                </strong>
+              </span>
+              <span className="flex items-center gap-1 text-slate-400">
+                <span>Pusher:</span>
+                <strong className={telemetry.pusherActive ? 'text-amber-400' : 'text-slate-500'}>
+                  {telemetry.pusherActive ? 'ACTIVE' : 'IDLE'}
+                </strong>
+              </span>
+            </div>
+          )}
+
+          {selectedScene === 'tank' && (
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-slate-400">
+                <span>Level:</span>
+                <strong className="text-cyan-400">{telemetry.waterLevelPct}%</strong>
+              </span>
+              <span className="flex items-center gap-1 text-slate-400">
+                <span>Pump Flow:</span>
+                <strong className={telemetry.flowRateLpm > 0 ? 'text-emerald-400' : 'text-slate-500'}>
+                  {telemetry.flowRateLpm > 0 ? `${telemetry.flowRateLpm} L/min` : '0 L/min'}
+                </strong>
+              </span>
+            </div>
+          )}
+
+          {selectedScene === 'motor' && (
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-slate-400">
+                <span>Speed:</span>
+                <strong className={telemetry.motorRPM > 0 ? 'text-emerald-400' : 'text-slate-500'}>
+                  {telemetry.motorRPM} RPM
+                </strong>
+              </span>
+            </div>
+          )}
+
+          <span className="text-slate-700">|</span>
+
+          <span className="text-slate-400 flex items-center gap-1">
+            <span>Active I/O:</span>
+            <span className="text-blue-400 font-bold">{telemetry.activeInputsCount} In</span>
+            <span className="text-slate-600">/</span>
+            <span className="text-amber-400 font-bold">{telemetry.activeOutputsCount} Out</span>
+          </span>
+        </div>
+
+        <div className="px-3 py-1.5 rounded-lg bg-[#111114]/90 backdrop-blur-md border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center gap-2 pointer-events-auto shadow-xl">
+          <span className="text-indigo-400 flex items-center gap-1">
+            <Atom className="w-3.5 h-3.5" /> Cannon.js 3D Physics
+          </span>
+          <span className="text-slate-700">|</span>
+          <span className="text-slate-400">Drag to Orbit • Scroll to Zoom</span>
+        </div>
       </div>
+
+      {/* 3D Component Catalog & Placement Modal */}
+      <DigitalTwinCatalogModal
+        isOpen={isCatalogOpen}
+        onClose={() => setIsCatalogOpen(false)}
+        project={project}
+        onPlacePrimitive={handlePlacePrimitive}
+        placedInstances={placedInstances}
+        onRemoveInstance={handleRemoveInstance}
+        theme={theme}
+      />
     </div>
   );
 };

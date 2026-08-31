@@ -129,13 +129,36 @@ export const QuickHelpModal: React.FC<QuickHelpModalProps> = ({ isOpen, onClose 
               </div>
             </div>
           </div>
+
+          {/* Section 4: Developer Credit */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 via-neutral-900/80 to-blue-950/30 border border-emerald-500/30 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-neutral-100 text-sm">Eng. Alaa Mohammed</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono border border-emerald-500/30">
+                    Lead Developer & Architect
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-400 mt-0.5">
+                  تم التصميم والتطوير بواسطة: <strong className="text-neutral-200">المهندس علاء محمد (Eng. Alaa Mohammed)</strong> — مهندس نظم التحكم والأتمتة الصناعية.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-neutral-700/60 bg-[#252525] flex justify-end">
+        <div className="p-4 border-t border-neutral-700/60 bg-[#252525] flex items-center justify-between">
+          <div className="text-[11px] text-neutral-400 font-mono">
+            Designed for Industrial Automation & Digital Twin Systems
+          </div>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-[#0066ff] hover:bg-[#0052cc] text-white text-xs font-semibold"
+            className="px-4 py-1.5 rounded-lg bg-[#0066ff] hover:bg-[#0052cc] text-white text-xs font-semibold cursor-pointer transition-colors"
           >
             Got It
           </button>

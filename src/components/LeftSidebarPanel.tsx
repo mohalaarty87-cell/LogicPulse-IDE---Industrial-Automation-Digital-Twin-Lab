@@ -43,8 +43,10 @@ import {
   ProjectFile, 
   IOTag, 
   SimulationStatus,
-  LadderRung 
+  LadderRung,
+  LadderSnippet
 } from '../types/plc';
+import { LibraryPanel } from './LibraryPanel';
 
 interface LeftSidebarPanelProps {
   activeNav: ActiveSideNav;
@@ -65,6 +67,12 @@ interface LeftSidebarPanelProps {
   onToggleForce?: (tagId: string) => void;
   onUpdatePLCConfig?: (config: { dialect: string; scanCycleMs: number; cpuModel: string }) => void;
   onLoadTemplateLogic?: (templateName: string) => void;
+  snippets?: LadderSnippet[];
+  onInsertSnippet?: (snippet: LadderSnippet, targetIndex?: number) => void;
+  onOpenSaveSnippetModal?: () => void;
+  onDeleteSnippet?: (snippetId: string) => void;
+  onImportSnippets?: (jsonText: string) => void;
+  onExportSnippets?: () => void;
 }
 
 export const LeftSidebarPanel: React.FC<LeftSidebarPanelProps> = ({
@@ -86,6 +94,12 @@ export const LeftSidebarPanel: React.FC<LeftSidebarPanelProps> = ({
   onToggleForce,
   onUpdatePLCConfig,
   onLoadTemplateLogic,
+  snippets = [],
+  onInsertSnippet,
+  onOpenSaveSnippetModal,
+  onDeleteSnippet,
+  onImportSnippets,
+  onExportSnippets,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
@@ -563,36 +577,19 @@ export const LeftSidebarPanel: React.FC<LeftSidebarPanelProps> = ({
           </div>
         )}
 
-        {/* VIEW 5: COMPONENT LIBRARY */}
+        {/* VIEW 5: COMPONENT & SNIPPET LIBRARY */}
         {activeNav === 'library' && (
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-              Industrial Logic Templates
-            </span>
-            <div className="flex flex-col gap-2">
-              {libraryTemplates.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-2.5 rounded-lg bg-[#16161a] border border-slate-800 hover:border-purple-500/60 transition-all flex flex-col gap-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-purple-300">{item.name}</span>
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-950/60 text-purple-400 border border-purple-800/40">
-                      {item.category}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    {item.desc}
-                  </p>
-                  <button
-                    onClick={() => onLoadTemplateLogic?.(item.id)}
-                    className="mt-1 w-full py-1 rounded bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/40 text-purple-300 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
-                  >
-                    <Plus className="w-3 h-3" /> Load Logic Pattern
-                  </button>
-                </div>
-              ))}
-            </div>
+          <div className="-m-3 h-[calc(100%+1.5rem)] flex flex-col overflow-hidden">
+            <LibraryPanel
+              snippets={snippets}
+              onInsertSnippet={(snippet, targetIdx) => onInsertSnippet?.(snippet, targetIdx)}
+              onOpenSaveModal={() => onOpenSaveSnippetModal?.()}
+              onDeleteSnippet={(id) => onDeleteSnippet?.(id)}
+              onImportSnippets={(txt) => onImportSnippets?.(txt)}
+              onExportSnippets={() => onExportSnippets?.()}
+              theme={theme}
+              selectedRung={project.ladder.find((r) => r.id === selectedRungId) || null}
+            />
           </div>
         )}
 
